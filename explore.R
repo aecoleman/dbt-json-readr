@@ -9,7 +9,7 @@ read_catalog_objects <- function(obj) {
   obj %>%
     purrr::imap_dfr(
       ~ dplyr::tibble(
-            unique_name = .y,
+            unique_id = .y,
             materialized_as = .x[["metadata"]][["type"]],
             database = .x[["metadata"]][["database"]],
             schema = .x[["metadata"]][["schema"]],
@@ -44,10 +44,14 @@ parse_catalog <- function(catalog_list) {
           purrr::pluck(.x) %>%
           read_catalog_objects() %>%
           dplyr::mutate(
-            dbt_type = .x
+            manifest_group = .x
           ) %>%
           dplyr::select(
-            dbt_type,
+            unique_id,
+            manifest_group,
+            database,
+            schema,
+            name,
             dplyr::everything()
           )
     )
@@ -75,7 +79,7 @@ read_manifest_nodes <- function(x) {
   read_manifest_node <- function(y) {
     dplyr::tibble(
       unique_id = y[["unique_id"]],
-      dbt_type = "node",
+      manifest_group = "nodes",
       resource_type = y[["resource_type"]],
       database = y[["database"]],
       schema = y[["schema"]],
@@ -119,7 +123,7 @@ read_manifest_sources <- function(x) {
   read_manifest_source <- function(y) {
     dplyr::tibble(
           unique_id = y[["unique_id"]],
-          dbt_type = "source",
+          manifest_group = "sources",
           resource_type = y[["resource_type"]],
           database = y[["database"]],
           schema = y[["schema"]],
