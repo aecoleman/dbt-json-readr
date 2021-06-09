@@ -70,64 +70,61 @@ run_manifest <-
 
 names(run_manifest)
 
-manifest_nodes <-
-  run_manifest %>%
-    purrr::pluck("nodes") %>%
-    purrr::map_dfr(
-      ~ dplyr::tibble(
-          unique_id = .x[["unique_id"]],
-          resource_type = .x[["resource_type"]],
-          database = .x[["database"]],
-          schema = .x[["schema"]],
-          name = dplyr::coalesce(.x[["alias"]], .x[["name"]]),
-          description = .x[["description"]],
-          is_enabled = .x[["config"]][["enabled"]],
-          materialized_as = .x[["config"]][["materialized"]],
-          depends_on = .x[["depends_on"]] %>%
-                        purrr::imap_dfr(
-                          ~ if (length(.x) > 0) {
-                              dplyr::tibble(
-                                type = .y,
-                                unique_id = .x
-                              )
-                            } else {
-                              dplyr::tibble(
-                                type = NA_character_,
-                                unique_id = NA_character_
-                              ) %>%
-                              dplyr::filter(
-                                !is.na(type),
-                                !is.na(unique_id)
-                              )
-                            }
-                        ) %>%
-                        list(),
-          sha256 = dplyr::if_else(
-                    .x[["checksum"]][["name"]] == "sha256",
-                    .x[["checksum"]][["checksum"]],
-                    NA_character_)
-      )
-    ) %>%
-    dplyr::arrange(
-      resource_type,
-      is_enabled,
-      database,
-      schema,
-      name,
-      unique_id
-    )
+read_manifest_nodes <- function(x) {
 
-manifest_sources <-
-  run_manifest %>%
-    purrr::pluck("sources") %>%
-    purrr::map_dfr(
-      ~ dplyr::tibble(
-          unique_id = .x[["unique_id"]],
-          resource_type = .x[["resource_type"]],
-          database = .x[["database"]],
-          schema = .x[["schema"]],
-          name = .x[["identifier"]],
-          description = .x[["description"]],
+  read_manifest_node <- function(y) {
+    dplyr::tibble(
+      unique_id = y[["unique_id"]],
+      dbt_type = "node",
+      resource_type = y[["resource_type"]],
+      database = y[["database"]],
+      schema = y[["schema"]],
+      name = dplyr::coalesce(y[["alias"]], y[["name"]]),
+      description = y[["description"]],
+      is_enabled = y[["config"]][["enabled"]],
+      materialized_as = y[["config"]][["materialized"]],
+      depends_on = y[["depends_on"]] %>%
+                    purrr::imap_dfr(
+                      ~ if (length(.x) > 0) {
+                          dplyr::tibble(
+                            type = .y,
+                            unique_id = .x
+                          )
+                        } else {
+                          dplyr::tibble(
+                            type = NA_character_,
+                            unique_id = NA_character_
+                          ) %>%
+                          dplyr::filter(
+                            !is.na(type),
+                            !is.na(unique_id)
+                          )
+                        }
+                    ) %>%
+                    list(),
+      sha256 = dplyr::if_else(
+                y[["checksum"]][["name"]] == "sha256",
+                y[["checksum"]][["checksum"]],
+                NA_character_)
+    )
+  }
+
+  x %>%
+    purrr::map_dfr(read_manifest_node)
+
+}
+
+read_manifest_sources <- function(x) {
+
+  read_manifest_source <- function(y) {
+    dplyr::tibble(
+          unique_id = y[["unique_id"]],
+          dbt_type = "source",
+          resource_type = y[["resource_type"]],
+          database = y[["database"]],
+          schema = y[["schema"]],
+          name = y[["identifier"]],
+          description = y[["description"]],
           is_enabled = NA,
           materialized_as = NA_character_,
           depends_on = dplyr::tibble(
@@ -139,7 +136,7 @@ manifest_sources <-
                           !is.na(unique_id)
                         ) %>%
                         list(),
-          columns = .x[["columns"]] %>%
+          columns = y[["columns"]] %>%
                       purrr::map_dfr(
                         ~ dplyr::tibble(
                             name = .x[["name"]],
@@ -156,12 +153,34 @@ manifest_sources <-
                       list(),
           sha256 = NA_character_
         )
-    )
+  }
 
-dplyr::bind_rows(
-  manifest_nodes,
-  manifest_sources
-)
+  x %>% purrr::map_dfr(read_manifest_source)
+
+}
+
+manifest_sources <-
+ run_manifest %>%
+    purrr::pluck("sources") %>%
+    read_manifest_sources()
+
+manifest_nodes <-
+  run_manifest %>%
+    purrr::pluck("nodes") %>%
+    read_manifest_nodes()
+
+df_manifest <-
+  dplyr::bind_rows(
+    manifest_nodes,
+    manifest_sources
+  ) %>%
+  dplyr::arrange(
+    resource_type,
+    database,
+    schema,
+    name,
+    unique_id
+  )
 
 # Parse Source ----
 
